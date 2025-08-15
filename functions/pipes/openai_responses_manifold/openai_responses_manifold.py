@@ -220,7 +220,7 @@ class ResponsesBody(BaseModel):
 
         # 3. deduplicate ---------------------------------------------------
         canonical: dict[str, dict] = {}
-        for t in native + converted:                     # later wins
+        for t in native + converted:                     # último vence
             key = t["name"] if t.get("type") == "function" else t["type"]
             canonical[key] = t
 
@@ -240,7 +240,7 @@ class ResponsesBody(BaseModel):
 
         try:
             data = json.loads(mcp_json)
-        except Exception as exc:                             # malformed JSON
+        except Exception as exc:                             # JSON malformado
             logging.getLogger(__name__).warning(
                 "REMOTE_MCP_SERVERS_JSON could not be parsed (%s); ignoring.", exc
             )
@@ -253,7 +253,7 @@ class ResponsesBody(BaseModel):
         for idx, obj in enumerate(items, start=1):
             if not isinstance(obj, dict):
                 logging.getLogger(__name__).warning(
-                    "REMOTE_MCP_SERVERS_JSON item %d ignored: not an object.", idx
+                    "Item %d do REMOTE_MCP_SERVERS_JSON ignorado: não é um objeto.", idx
                 )
                 continue
 
@@ -262,8 +262,8 @@ class ResponsesBody(BaseModel):
             url   = obj.get("server_url")
             if not (label and url):
                 logging.getLogger(__name__).warning(
-                    "REMOTE_MCP_SERVERS_JSON item %d ignored: "
-                    "'server_label' and 'server_url' are required.", idx
+                    "Item %d do REMOTE_MCP_SERVERS_JSON ignorado: "
+                    "'server_label' e 'server_url' são obrigatórios.", idx
                 )
                 continue
 
@@ -336,12 +336,12 @@ class ResponsesBody(BaseModel):
 
             # -------- user message ---------------------------------------- #
             if role == "user":
-                # Convert string content to a block list (["Hello"] → [{"type": "text", "text": "Hello"}])
+                # Converter conteúdo de string para uma lista de blocos (["Hello"] → [{"type": "text", "text": "Hello"}])
                 content_blocks = msg.get("content") or []
                 if isinstance(content_blocks, str):
                     content_blocks = [{"type": "text", "text": content_blocks}]
 
-                # Only transform known types; leave all others unchanged
+                # Apenas transformar tipos conhecidos; deixar todos os outros inalterados
                 block_transform = {
                     "text":       lambda b: {"type": "input_text",  "text": b.get("text", "")},
                     "image_url":  lambda b: {"type": "input_image", "image_url": b.get("image_url", {}).get("url")},
@@ -485,7 +485,7 @@ class Pipe:
 
         # 2) Models
         MODEL_ID: str = Field(
-            default="gpt-5-auto, gpt-5-chat-latest, gpt-5-thinking, gpt-5-thinking-high, gpt-5-thinking-minimal, gpt-4.1-nano, chatgpt-4o-latest, o3, gpt-4o",
+            default="gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-thinking, gpt-5-thinking-high, gpt-5-thinking-minimal, o3-mini, o4-mini",
             description=(
             "Comma separated OpenAI model IDs. Each ID becomes a model entry in WebUI. "
             "Supports all official OpenAI model IDs and pseudo IDs: "
@@ -669,7 +669,7 @@ class Pipe:
         # Detect if task model (generate title, generate tags, etc.), handle it separately
         if __task__:
             self.logger.info("Detected task model: %s", __task__)
-            return await self._run_task_model_request(responses_body.model_dump(), valves) # Placeholder for task handling logic
+            return await self._run_task_model_request(responses_body.model_dump(), valves) # Placeholder para lógica de tratamento de tarefas
 
         # If GPT-5-Auto, run through model router and update model.
         if openwebui_model_id.endswith(".gpt-5-auto"):
@@ -688,7 +688,7 @@ class Pipe:
         model_family = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", responses_body.model)
         
         # Add Open WebUI Tools (if any) to the ResponsesBody.
-        # TODO: Also detect body['tools'] and merge them with __tools__.  This would allow users to pass tools in the request body from filters, etc.
+        # TODO: Também detectar body['tools'] e mesclá-los com __tools__. Isso permitiria que os usuários passassem ferramentas no corpo da requisição a partir de filtros, etc.
         if __tools__ and model_family in FEATURE_SUPPORT["function_calling"]:
             responses_body.tools = ResponsesBody.transform_tools(
                 tools = __tools__,
@@ -696,7 +696,7 @@ class Pipe:
             )
 
         # Add web_search tool only if supported, enabled, and effort != minimal
-        # Noted that web search doesn't seem to work when effort = minimal.
+        # Observado que a pesquisa na web não parece funcionar quando effort = minimal.
         if (
             model_family in FEATURE_SUPPORT["web_search_tool"]
             and (valves.ENABLE_WEB_SEARCH_TOOL or features.get("web_search", False))
@@ -709,37 +709,37 @@ class Pipe:
                 **({"user_location": json.loads(valves.WEB_SEARCH_USER_LOCATION)} if valves.WEB_SEARCH_USER_LOCATION else {}),
             })
 
-        # Append remote MCP servers (experimental)
+        # Anexar servidores MCP remotos (experimental)
         if valves.REMOTE_MCP_SERVERS_JSON:
             mcp_tools = ResponsesBody._build_mcp_tools(valves.REMOTE_MCP_SERVERS_JSON)
             if mcp_tools:
                 responses_body.tools = (responses_body.tools or []) + mcp_tools
 
-        # Check if tools are enabled but native function calling is disabled
-        # If so, update the OpenWebUI model parameter to enable native function calling for future requests.
+        # Verificar se as ferramentas estão habilitadas mas a chamada de função nativa está desabilitada
+        # Se sim, atualizar o parâmetro do modelo OpenWebUI para habilitar a chamada de função nativa para requisições futuras.
         if __tools__ and (
-            (__metadata__.get("params", {}) or {}).get("function_calling") # New location as of v0.6.20
-            or __metadata__.get("function_calling") # Old location pre v0.6.20
+            (__metadata__.get("params", {}) or {}).get("function_calling") # Nova localização a partir do v0.6.20
+            or __metadata__.get("function_calling") # Localização antiga pré v0.6.20
         ) != "native":
             supports_function_calling = model_family in FEATURE_SUPPORT["function_calling"]
 
             if supports_function_calling:
                 await self._emit_notification(
                     __event_emitter__,
-                    content=f"Enabling native function calling for model: {responses_body.model}. Please re-run your query.",
+                    content=f"Habilitando o uso de funções nativas para o modelo: {responses_body.model}. Por favor, pergunte novamente.",
                     level="info"
                 )
                 update_openwebui_model_param(openwebui_model_id, "function_calling", "native")
 
             
-        # Enable reasoning summary if enabled and supported
+        # Habilitar resumo de raciocínio se habilitado e suportado
         if model_family in FEATURE_SUPPORT["reasoning_summary"] and valves.REASONING_SUMMARY != "disabled":
-            # Ensure reasoning param is a mutable dict so we can safely assign to it
+            # Garantir que o parâmetro de raciocínio seja um dict mutável para que possamos atribuir com segurança
             reasoning_params = dict(responses_body.reasoning or {})
             reasoning_params["summary"] = valves.REASONING_SUMMARY
             responses_body.reasoning = reasoning_params
 
-        # Always request encrypted reasoning for in-turn carry (multi-tool) unless disabled
+        # Sempre solicitar raciocínio criptografado para transporte entre turnos (multi-ferramenta) a menos que desabilitado
         if (model_family in FEATURE_SUPPORT["reasoning"]
             and valves.PERSIST_REASONING_TOKENS != "disabled"
             and responses_body.store is False):
@@ -747,7 +747,7 @@ class Pipe:
              if "reasoning.encrypted_content" not in responses_body.include:
                  responses_body.include.append("reasoning.encrypted_content")
 
-        # Map WebUI "Add Details" / "More Concise" → text.verbosity (if supported by model), then strip the stub
+        # Mapear WebUI "Add Details" / "More Concise" → text.verbosity (se suportado pelo modelo), depois remover o stub
         input_items = responses_body.input if isinstance(responses_body.input, list) else None
         if input_items:
             last_item = input_items[-1]
@@ -771,12 +771,12 @@ class Pipe:
                     input_items.pop()  # or: del input_items[-1]
 
                     # Notify the user in the UI
-                    await self._emit_notification(__event_emitter__,f"Regenerating with verbosity set to {verbosity_value}.",level="info")
+                    await self._emit_notification(__event_emitter__,f"Regerando conteudo com mais verbosidade: {verbosity_value}.",level="info")
 
-                    self.logger.debug("Set text.verbosity=%s based on regenerate directive '%s'",verbosity_value, last_user_text)
+                    self.logger.debug("Definido text.verbosity=%s baseado na diretiva de regeneração '%s'",verbosity_value, last_user_text)
 
         # Log the transformed request body
-        self.logger.debug("Transformed ResponsesBody: %s", json.dumps(responses_body.model_dump(exclude_none=True), indent=2, ensure_ascii=False))
+        self.logger.debug("ResponsesBody transformado: %s", json.dumps(responses_body.model_dump(exclude_none=True), indent=2, ensure_ascii=False))
             
         # Send to OpenAI Responses API
         if responses_body.stream:
@@ -814,8 +814,8 @@ class Pipe:
         if model_family in FEATURE_SUPPORT["reasoning"]:
             assistant_message = await status_indicator.add(
                 assistant_message,
-                status_title="Thinking…",
-                status_content="Reading the question and building a plan to answer it. This may take a moment.",
+                status_title="Pensando…",
+                status_content="Entendo sua solicitação e construindo um plano de ação. Isso pode levar um momento.",
             )
 
         # Send OpenAI Responses API request, parse and emit response
@@ -851,7 +851,7 @@ class Pipe:
                         if text:
                             # Use last bolded header as the title, else fallback
                             title_match = re.findall(r"\*\*(.+?)\*\*", text)
-                            title = title_match[-1].strip() if title_match else "Thinking…"
+                            title = title_match[-1].strip() if title_match else "Pensando..."
 
                             # Remove bold markers from body
                             content = re.sub(r"\*\*(.+?)\*\*", "", text).strip()
@@ -922,7 +922,7 @@ class Pipe:
                             # Emit a status update for the message
                             assistant_message = await status_indicator.add(
                                 assistant_message,
-                                status_title="📝 Responding to the user…",
+                                status_title="📝 Respondendo o usuário…",
                                 status_content="",
                             )
                             continue
@@ -970,32 +970,32 @@ class Pipe:
                             content = wrap_code_block(f"{item_name}({args_formatted})", "python")
 
                         elif item_type == "web_search_call":
-                            title = "🔍 Hmm, let me quickly check online…"
+                            title = "🔍 Deixe me verificar na internet…"
 
                             # If action type is 'search', then set title to "🔍 Searching the web for [query]"
                             action = item.get("action", {})
                             if action.get("type") == "search":
                                 query = action.get("query")
                                 if query:
-                                    title = f"🔍 Searching the web for: `{query}`"
+                                    title = f"🔍 Buscando na internet: `{query}`"
                                 else:
-                                    title = "🔍 Searching the web"
+                                    title = "🔍 Buscando na internet"
 
                             # If action type is 'open_page', then set title to "🔍 Opening web page [url]"
                             elif action.get("type") == "open_page":
-                                title = "🔍 Opening web page…"
+                                title = "🔍 Buscando na internet…"
                                 url = action.get("url")
                                 if url:
                                     content = f"URL: `{url}`"
 
                         elif item_type == "file_search_call":
-                            title = "📂 Let me skim those files…"
+                            title = "📂 Deixe me buscar esses arquivos…"
                         elif item_type == "image_generation_call":
-                            title = "🎨 Let me create that image…"
+                            title = "🎨 Deixe me criar essa imagem…"
                         elif item_type == "local_shell_call":
-                            title = "💻 Let me run that command…"
+                            title = "💻 Deixe me executar esse comando…"
                         elif item_type == "mcp_call":
-                            title = "🌐 Let me query the MCP server…"
+                            title = "🌐 Deixe me consultar o servidor MCP…"
                         elif item_type == "reasoning":
                             title = None # Don't emit a title for reasoning items
 
@@ -1016,7 +1016,7 @@ class Pipe:
                         break
 
                 if final_response is None:
-                    raise ValueError("No final response received from OpenAI Responses API.")
+                    raise ValueError("Nenhuma resposta final recebida da API OpenAI Responses.")
 
                 # Extract usage information from OpenAI response and pass-through to Open WebUI
                 usage = final_response.get("usage", {})
@@ -1050,7 +1050,7 @@ class Pipe:
                         result_text = wrap_code_block(output.get("output", ""))
                         assistant_message = await status_indicator.add(
                             assistant_message,
-                            status_title="🛠️ Received tool result",
+                            status_title="🛠️ Resultado da ferramenta recebido",
                             status_content=result_text,
                         )
                     body.input.extend(function_outputs)
@@ -1073,9 +1073,9 @@ class Pipe:
                         await self._emit_citation(event_emitter, "\n".join(logs), "Logs")
 
             # Emit completion (middleware.py also does this so this just covers if there is a downstream error)
-            await self._emit_completion(event_emitter, content="", usage=total_usage, done=True)  # There must be an empty content to avoid breaking the UI
+            await self._emit_completion(event_emitter, content="", usage=total_usage, done=True)  # Deve haver um conteúdo vazio para evitar quebrar a UI
 
-            # Clear logs
+            # Limpar registros
             logs_by_msg_id.clear()
             SessionLogger.logs.pop(SessionLogger.session_id.get(), None)
 
@@ -1086,7 +1086,7 @@ class Pipe:
                     chat_id, message_id, {"sources": emitted_citations}
                 )
 
-            # Return the final output to ensure persistence.
+            # Retornar a saída final para garantir persistência.
             return assistant_message
 
 
@@ -1119,9 +1119,9 @@ class Pipe:
         if model_family in FEATURE_SUPPORT["reasoning"]:
             assistant_message = await status_indicator.add(
                 assistant_message,
-                status_title="Thinking…",
+                status_title="Pensando…",
                 status_content=(
-                    "Reading the question and building a plan to answer it. This may take a moment."
+                    "Entendo sua solicitação e construindo um plano de ação. Isso pode levar um momento."
                 ),
             )
 
@@ -1135,7 +1135,7 @@ class Pipe:
 
                 items = response.get("output", [])
 
-                # Persist non-message items immediately and insert invisible markers
+                # Persistir itens não-mensagem imediatamente e inserir marcadores invisíveis
                 for item in items:
                     item_type = item.get("type")
 
@@ -1150,7 +1150,7 @@ class Pipe:
                         if text:
                             reasoning_map[idx] = reasoning_map.get(idx, "") + text
                             title_match = re.findall(r"\*\*(.+?)\*\*", text)
-                            title = title_match[-1].strip() if title_match else "Thinking…"
+                            title = title_match[-1].strip() if title_match else "Pensando…"
                             content = re.sub(r"\*\*(.+?)\*\*", "", text).strip()
                             assistant_message = await status_indicator.add(
                                 assistant_message,
@@ -1164,7 +1164,7 @@ class Pipe:
                         )
                         snippet = (
                             f'<details type="{__name__}.reasoning" done="true">\n'
-                            f"<summary>Done thinking!</summary>\n{parts}</details>"
+                            f"<summary>Pensamento concluído!</summary>\n{parts}</details>"
                         )
                         assistant_message += snippet
                         reasoning_map.clear()
@@ -1184,34 +1184,34 @@ class Pipe:
                         content = ""
 
                         if item_type == "function_call":
-                            title = f"🛠️ Running the {item.get('name', 'unnamed_tool')} tool…"
+                            title = f"🛠️ Executando a ferramenta {item.get('name', 'unnamed_tool')}…"
                             arguments = json.loads(item.get("arguments") or "{}")
                             args_formatted = ", ".join(
                                 f"{k}={json.dumps(v)}" for k, v in arguments.items()
                             )
                             content = wrap_code_block(f"{item.get('name', 'unnamed_tool')}({args_formatted})", "python")
                         elif item_type == "web_search_call":
-                            title = "🔍 Hmm, let me quickly check online…"
+                            title = "🔍 Deixe me verificar na internet…"
                             action = item.get("action", {})
                             if action.get("type") == "search":
                                 query = action.get("query")
                                 if query:
-                                    title = f"🔍 Searching the web for: `{query}`"
+                                    title = f"🔍 Buscando na internet: `{query}`"
                                 else:
-                                    title = "🔍 Searching the web"
+                                    title = "🔍 Buscando na internet"
                             elif action.get("type") == "open_page":
-                                title = "🔍 Opening web page…"
+                                title = "🔍 Buscando na internet…"
                                 url = action.get("url")
                                 if url:
                                     content = f"URL: `{url}`"
                         elif item_type == "file_search_call":
-                            title = "📂 Let me skim those files…"
+                            title = "📂 Deixe me buscar esses arquivos…"
                         elif item_type == "image_generation_call":
-                            title = "🎨 Let me create that image…"
+                            title = "🎨 Deixe me criar essa imagem…"
                         elif item_type == "local_shell_call":
-                            title = "💻 Let me run that command…"
+                            title = "💻 Deixe me executar esse comando…"
                         elif item_type == "mcp_call":
-                            title = "🌐 Let me query the MCP server…"
+                            title = "🌐 Deixe me consultar o servidor MCP…"
                         elif item_type == "reasoning":
                             title = None
 
@@ -1233,7 +1233,7 @@ class Pipe:
 
                 body.input.extend(items)
 
-                # Run tools if requested
+                # Executar ferramentas se solicitado
                 calls = [i for i in items if i.get("type") == "function_call"]
                 if calls:
                     function_outputs = await self._execute_function_calls(calls, tools)
@@ -1252,14 +1252,14 @@ class Pipe:
                         result_text = wrap_code_block(output.get("output", ""))
                         assistant_message = await status_indicator.add(
                             assistant_message,
-                            status_title="🛠️ Received tool result",
+                            status_title="🛠️ Resultado da ferramenta recebido",
                             status_content=result_text,
                         )
                     body.input.extend(function_outputs)
                 else:
                     break
 
-            # Finalize output
+            # Finalizar saída
             final_text = assistant_message.strip()
             if not status_indicator._done and status_indicator._items:
                 final_text = await status_indicator.finish(final_text)
@@ -1276,7 +1276,7 @@ class Pipe:
         finally:
             if not status_indicator._done and status_indicator._items:
                 assistant_message = await status_indicator.finish(assistant_message)
-            # Clear logs
+            # Limpar registros
             logs_by_msg_id.clear()
             SessionLogger.logs.pop(SessionLogger.session_id.get(), None)
     
@@ -1331,7 +1331,7 @@ class Pipe:
         responses.  It decodes each ``data:`` line and yields the parsed JSON
         payload immediately.
         """
-        # Get or create aiohttp session (aiohttp is used for performance).
+        # Obter ou criar sessão aiohttp (aiohttp é usado para performance).
         self.session = await self._get_or_init_http_session()
 
         headers = {
@@ -1348,7 +1348,7 @@ class Pipe:
             async for chunk in resp.content.iter_chunked(4096):
                 buf.extend(chunk)
                 start_idx = 0
-                # Process all complete lines in the buffer
+                # Processar todas as linhas completas no buffer
                 while True:
                     newline_idx = buf.find(b"\n", start_idx)
                     if newline_idx == -1:
@@ -1357,18 +1357,18 @@ class Pipe:
                     line = buf[start_idx:newline_idx].strip()
                     start_idx = newline_idx + 1
 
-                    # Skip empty lines, comment lines, or anything not starting with "data:"
+                    # Pular linhas vazias, linhas de comentário ou qualquer coisa que não comece com "data:"
                     if (not line or line.startswith(b":") or not line.startswith(b"data:")):
                         continue
 
                     data_part = line[5:].strip()
                     if data_part == b"[DONE]":
-                        return  # End of SSE stream
+                        return  # Fim do stream SSE
                     
-                    # Yield JSON-decoded data
+                    # Retornar dados decodificados do JSON
                     yield json.loads(data_part.decode("utf-8"))
 
-                # Remove processed data from the buffer
+                # Remover dados processados do buffer
                 if start_idx > 0:
                     del buf[:start_idx]
 
@@ -1379,7 +1379,7 @@ class Pipe:
         base_url: str,
     ) -> Dict[str, Any]:
         """Send a blocking request to the Responses API and return the JSON payload."""
-        # Get or create aiohttp session (aiohttp is used for performance).
+        # Obter ou criar sessão aiohttp (aiohttp é usado para performance).
         self.session = await self._get_or_init_http_session()
 
         headers = {
@@ -1398,26 +1398,26 @@ class Pipe:
         The session is created with connection pooling and sensible timeouts on
         first use and is then reused for the lifetime of the process.
         """
-        # Reuse existing session if available and open
+        # Reutilizar sessão existente se disponível e aberta
         if self.session is not None and not self.session.closed:
-            self.logger.debug("Reusing existing aiohttp.ClientSession")
+            self.logger.debug("Reutilizando sessão aiohttp.ClientSession existente")
             return self.session
 
-        self.logger.debug("Creating new aiohttp.ClientSession")
+        self.logger.debug("Criando nova sessão aiohttp.ClientSession")
 
-        # Configure TCP connector for connection pooling and DNS caching
+        # Configurar conector TCP para pool de conexões e cache DNS
         connector = aiohttp.TCPConnector(
-            limit=50,  # Max total simultaneous connections
-            limit_per_host=10,  # Max connections per host
-            keepalive_timeout=75,  # Seconds to keep idle sockets open
-            ttl_dns_cache=300,  # DNS cache time-to-live in seconds
+            limit=50,  # Máximo total de conexões simultâneas
+            limit_per_host=10,  # Máximo de conexões por host
+            keepalive_timeout=75,  # Segundos para manter sockets ociosos abertos
+            ttl_dns_cache=300,  # Tempo de vida do cache DNS em segundos
         )
 
-        # Set reasonable timeouts for connection and socket operations
+        # Definir timeouts razoáveis para operações de conexão e socket
         timeout = aiohttp.ClientTimeout(
-            connect=30,  # Max seconds to establish connection
-            sock_connect=30,  # Max seconds for socket connect
-            sock_read=3600,  # Max seconds for reading from socket (1 hour)
+            connect=30,  # Máximo de segundos para estabelecer conexão
+            sock_connect=30,  # Máximo de segundos para conexão de socket
+            sock_read=3600,  # Máximo de segundos para leitura do socket (1 hora)
         )
 
         session = aiohttp.ClientSession(
@@ -1442,19 +1442,19 @@ class Pipe:
         """
         def _make_task(call):
             tool_cfg = tools.get(call["name"])
-            if not tool_cfg:                                 # tool missing
+            if not tool_cfg:                                 # ferramenta ausente
                 return asyncio.sleep(0, result="Tool not found")
 
             fn = tool_cfg["callable"]
             args = json.loads(call["arguments"])
 
-            if inspect.iscoroutinefunction(fn):              # async tool
+            if inspect.iscoroutinefunction(fn):              # ferramenta assíncrona
                 return fn(**args)
-            else:                                            # sync tool
+            else:                                            # ferramenta síncrona
                 return asyncio.to_thread(fn, **args)
 
-        tasks   = [_make_task(call) for call in calls]       # ← fire & forget
-        results = await asyncio.gather(*tasks)               # ← runs in parallel. TODO: asyncio.gather(*tasks) cancels all tasks if one tool raises.
+        tasks   = [_make_task(call) for call in calls]       # ← dispara e esquece
+        results = await asyncio.gather(*tasks)               # ← executa em paralelo. TODO: asyncio.gather(*tasks) cancela todas as tarefas se uma ferramenta falhar.
 
         return [
             {
@@ -1503,11 +1503,11 @@ class Pipe:
                     await self._emit_citation(
                         event_emitter,
                         "\n".join(logs),
-                        "Error Logs",
+                        "Logs de erro",
                     )
                 else:
                     self.logger.warning(
-                        "No debug logs found for session_id %s", session_id
+                        "Nenhum log de depuração encontrado para session_id %s", session_id
                     )
 
     async def _emit_citation(
@@ -1550,7 +1550,7 @@ class Pipe:
         self,
         event_emitter: Callable[[dict[str, Any]], Awaitable[None]] | None,
         *,
-        content: str | None = "",                       # always included (may be "").  UI will stall if you leave it out.
+        content: str | None = "",                       # sempre incluído (pode ser ""). A UI irá travar se você deixar de fora.
         title:   str | None = None,                     # optional title.
         usage:   dict[str, Any] | None = None,          # optional usage block
         done:    bool = True,                           # True → final frame
@@ -1564,7 +1564,7 @@ class Pipe:
         if event_emitter is None:
             return
 
-        # Note: Open WebUI emits a final "chat:completion" event after the stream ends, which overwrites any previously emitted completion events' content and title in the UI.
+        # Nota: O Open WebUI emite um evento final "chat:completion" após o fim do stream, que sobrescreve qualquer conteúdo e título de eventos de conclusão previamente emitidos na UI.
         await event_emitter(
             {
                 "type": "chat:completion",
@@ -1646,7 +1646,7 @@ class Pipe:
         if not user_valves:
             return global_valves
 
-        # Merge: update only fields not set to "INHERIT"
+        # Mesclar: atualizar apenas campos não definidos como "INHERIT"
         update = {
             k: v
             for k, v in user_valves.model_dump().items()
@@ -1844,7 +1844,7 @@ class ExpandableStatusIndicator:
     def _assert_not_finished(self, method: str) -> None:
         if self._done:
             raise RuntimeError(
-                f"Cannot call {method}(): status indicator is already finished."
+                f"Não é possível chamar {method}(): o indicador de status já foi concluído."
             )
 
     async def _render(self, assistant_message: str, emit: bool) -> str:
@@ -1874,7 +1874,7 @@ class ExpandableStatusIndicator:
                         lines.extend(textwrap.indent("\n".join(sub_lines[1:]), "    ").splitlines())
 
         body_md = "\n".join(lines) if lines else "_No status yet._"
-        summary = self._items[-1][0] if self._items else "Working…"
+        summary = self._items[-1][0] if self._items else "Trabalhando…"
 
         return (
             f'<details type="status" done="{str(self._done).lower()}">\n'
@@ -1954,7 +1954,7 @@ def merge_usage_stats(total, new):
         elif isinstance(v, (int, float)):
             total[k] = total.get(k, 0) + v
         else:
-            # Skip or explicitly set non-numeric values
+            # Pular ou definir explicitamente valores não numéricos
             total[k] = v if v is not None else total.get(k, 0)
     return total
 
@@ -2004,15 +2004,15 @@ def remove_details_tags_by_type(text: str, removal_types: list[str]) -> str:
     :param removal_types: ``type`` attribute values to remove.
     :return: ``text`` with matching blocks removed.
     """
-    # Safely escape the types in case they have special regex chars
+    # Escapar com segurança os tipos caso tenham caracteres especiais de regex
     pattern_types = "|".join(map(re.escape, removal_types))
-    # Example pattern: <details type="reasoning">...</details>
+    # Exemplo de padrão: <details type="reasoning">...</details>
     pattern = rf'<details\b[^>]*\btype=["\'](?:{pattern_types})["\'][^>]*>.*?</details>'
     return re.sub(pattern, "", text, flags=re.IGNORECASE | re.DOTALL)
 
 #####################
 
-# Helper utilities for persistent item markers
+# Utilitários auxiliares para marcadores de itens persistentes
 ULID_LENGTH = 16
 CROCKFORD_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -2041,7 +2041,7 @@ def create_marker(
     metadata: dict[str, str] | None = None,
 ) -> str:
     if not re.fullmatch(r"[a-z0-9_]{2,30}", item_type):
-        raise ValueError("item_type must be 2-30 chars of [a-z0-9_]")
+        raise ValueError("item_type deve ter 2-30 caracteres de [a-z0-9_]")
     meta = {**(metadata or {})}
     if model_id:
         meta["model"] = model_id
@@ -2056,7 +2056,7 @@ def contains_marker(text: str) -> bool:
 
 def parse_marker(marker: str) -> dict:
     if not marker.startswith("openai_responses:v2:"):
-        raise ValueError("not a v2 marker")
+        raise ValueError("não é um marcador v2")
     _, _, kind, rest = marker.split(":", 3)
     uid, _, q = rest.partition("?")
     return {"version": "v2", "item_type": kind, "ulid": uid, "metadata": _parse_qs(q)}
@@ -2109,10 +2109,10 @@ def fetch_openai_response_items(
         item = items_store.get(item_id)
         if not item:
             continue
-        # Only include previously persisted items that match the current model ID.
-        # OpenAI requires this to avoid items produced by one model leaking into subsequent requests for a different model.
-        # e.g., Encrypted reasoning tokens from o4-mini are not compatible with gpt-4o.
-        # TODO: Do some more sophisticated filtering here, e.g. check model features and allow items that are compatible with the current model.
+        # Apenas incluir itens previamente persistidos que correspondam ao ID do modelo atual.
+        # A OpenAI exige isso para evitar que itens produzidos por um modelo vazem para solicitações subsequentes de um modelo diferente.
+        # ex., Tokens de raciocínio criptografados do o4-mini não são compatíveis com gpt-4o.
+        # TODO: Fazer uma filtragem mais sofisticada aqui, ex. verificar recursos do modelo e permitir itens que são compatíveis com o modelo atual.
         if openwebui_model_id:
             if item.get("model", "") != openwebui_model_id:
                 continue
