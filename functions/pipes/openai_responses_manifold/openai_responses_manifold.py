@@ -6,7 +6,7 @@ author_url: https://github.com/jrkropp
 git_url: https://github.com/jrkropp/open-webui-developer-toolkit/blob/main/functions/pipes/openai_responses_manifold/openai_responses_manifold.py
 description: Brings OpenAI Response API support to Open WebUI, enabling features not possible via Completions API.
 required_open_webui_version: 0.6.3
-version: 0.8.26
+version: 0.8.28
 license: MIT
 """
 
@@ -661,7 +661,7 @@ class Pipe:
 
             # Additional optional parameters passed directly to ResponsesBody without validation. Overrides any parameters in the original body with the same name.
             truncation=valves.TRUNCATION,
-            prompt_cache_key=user_identifier,
+            user=user_identifier,
             service_tier=valves.SERVICE_TIER,
             **({"max_tool_calls": valves.MAX_TOOL_CALLS} if valves.MAX_TOOL_CALLS is not None else {}),
         )
@@ -686,13 +686,17 @@ class Pipe:
 
         # Normalize to family-level model name (e.g., 'o3' from 'o3-2025-04-16') to be used for feature detection.
         model_family = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", responses_body.model)
-        
+
+        # Resolve __tools__ coroutine returned by newer Open WebUI versions.
+        if inspect.isawaitable(__tools__):
+            __tools__ = await __tools__
+
         # Add Open WebUI Tools (if any) to the ResponsesBody.
         # TODO: Também detectar body['tools'] e mesclá-los com __tools__. Isso permitiria que os usuários passassem ferramentas no corpo da requisição a partir de filtros, etc.
         if __tools__ and model_family in FEATURE_SUPPORT["function_calling"]:
             responses_body.tools = ResponsesBody.transform_tools(
-                tools = __tools__,
-                strict = True
+                tools=__tools__,
+                strict=True,
             )
 
         # Add web_search tool only if supported, enabled, and effort != minimal
@@ -715,21 +719,27 @@ class Pipe:
             if mcp_tools:
                 responses_body.tools = (responses_body.tools or []) + mcp_tools
 
-        # Verificar se as ferramentas estão habilitadas mas a chamada de função nativa está desabilitada
-        # Se sim, atualizar o parâmetro do modelo OpenWebUI para habilitar a chamada de função nativa para requisições futuras.
-        if __tools__ and (
-            (__metadata__.get("params", {}) or {}).get("function_calling") # Nova localização a partir do v0.6.20
-            or __metadata__.get("function_calling") # Localização antiga pré v0.6.20
-        ) != "native":
-            supports_function_calling = model_family in FEATURE_SUPPORT["function_calling"]
+        # Check if tools are enabled but native function calling is disabled
+        # If so, update the OpenWebUI model parameter to enable native function calling for future requests.
+        if __tools__:
+            model = Models.get_model_by_id(openwebui_model_id)
+            if model:
+                params = dict(model.params or {})
+                if params.get("function_calling") != "native":
+                    supports_function_calling = model_family in FEATURE_SUPPORT["function_calling"]
 
-            if supports_function_calling:
-                await self._emit_notification(
-                    __event_emitter__,
-                    content=f"Habilitando o uso de funções nativas para o modelo: {responses_body.model}. Por favor, pergunte novamente.",
-                    level="info"
-                )
-                update_openwebui_model_param(openwebui_model_id, "function_calling", "native")
+                    if supports_function_calling:
+                        await self._emit_notification(
+                            __event_emitter__,
+                            content=f"Enabling native function calling for model: {openwebui_model_id}. Please re-run your query.",
+                            level="info"
+                        )
+
+                        form_data = model.model_dump()
+                        form_data["params"] = params
+                        form_data["params"]["function_calling"] = "native"
+                        form = ModelForm(**form_data)
+                        Models.update_model_by_id(openwebui_model_id, form)
 
             
         # Habilitar resumo de raciocínio se habilitado e suportado
@@ -1957,28 +1967,6 @@ def merge_usage_stats(total, new):
             # Pular ou definir explicitamente valores não numéricos
             total[k] = v if v is not None else total.get(k, 0)
     return total
-
-def update_openwebui_model_param(openwebui_model_id: str, field: str, value: Any):
-    """Update a model's parameter when the stored value differs.
-
-    :param openwebui_model_id: Identifier of the model to update.
-    :param field: Parameter field name to modify.
-    :param value: New value to store in ``field``.
-    :return: ``None``
-    """
-    model = Models.get_model_by_id(openwebui_model_id)
-    if not model:
-        return
-
-    form_data = model.model_dump()
-    form_data["params"] = dict(model.params or {})
-    if form_data["params"].get(field) == value:
-        return
-
-    form_data["params"][field] = value
-
-    form = ModelForm(**form_data)
-    Models.update_model_by_id(openwebui_model_id, form)
 
 
 def wrap_code_block(text: str, language: str = "python") -> str:
